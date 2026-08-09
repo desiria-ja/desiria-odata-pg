@@ -7,7 +7,7 @@ function usage() {
     "Usage: desiria-odata-pg <odata-json-file> --schema <schema> --table <table>",
     "",
     "Example:",
-    "  node src/cli.js test/fixtures/submissions.json --schema odk_stage --table bird_survey"
+    "  node src/cli.js test/fixtures/submissions.json --schema submissions_stage --table bird_survey"
   ].join("\n");
 }
 

@@ -7,7 +7,7 @@
     "desiria-odata-pg": "./src/cli.js"
   },
   "scripts": {
-    "demo": "node src/cli.js test/fixtures/submissions.json --schema odk_stage --table bird_survey",
+    "demo": "node src/cli.js test/fixtures/submissions.json --schema submissions_stage --table bird_survey",
     "test": "node --test"
   },
   "engines": {

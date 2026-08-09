@@ -13,7 +13,7 @@
   - 後続ページの最大 `updatedAt` が前ページより古い場合でも、状態が巻き戻らない。
 
 - 添付の扱いを README と実装で揃えた。
-  - OData feed 上のメディア値は、ODK Docs 上でファイル名として見える説明とメディアURLとして扱う説明が併存しているため、実装は既存URLを保存し、ファイル名らしい値は `baseUrl`、`projectId`、`formId`、`__id`、`filename` から `/v1/projects/{projectId}/forms/{xmlFormId}/submissions/{instanceId}/attachments/{filename}` を組み立てる。
+  - OData feed 上のメディア値は、ODK Docs 上でファイル名として見える説明とメディアURLとして扱う説明が併存しているため、実装は既存URLを保存し、ファイル名らしい値は `baseUrl`、`projectId`、`formId`、`__id`、`filename` から認証付きAPI参照URL候補 `/v1/projects/{projectId}/forms/{xmlFormId}/submissions/{instanceId}/attachments/{filename}` を組み立てる。
   - 実ファイルのダウンロードは引き続き範囲外。
 
 - README に OIDC SSO 環境の制約を明記した。
@@ -47,7 +47,7 @@
 ## まだ直っていないもの
 
 - OIDC SSO 環境向けの代替認証実装は未実装。README に制約として明記したのみ。
-- 添付ファイルの実体ダウンロード、保存、ETag 管理は未実装。現状は添付ダウンロードURLの保存用SQL生成まで。
+- 添付ファイルの実体ダウンロード、保存、ETag 管理、外部ツール向け `/dl` URL生成は未実装。現状は認証付きAPI参照URL候補の保存用SQL生成まで。
 - OData メタデータを読んでメディア型フィールドを厳密判定する処理は未実装。現状は既存URLと一般的な添付ファイル拡張子に見える文字列を対象にするため、非添付URLや拡張子付きテキストを誤検出する可能性がある。
 - 削除済みsubmissionの反映は未実装。`__system/deletedAt` は同期条件にも状態計算にも含めていない。
 
@@ -63,4 +63,4 @@
 ## 検証
 
 - `npm test`
-- 結果: 17件すべて成功。
+- 結果: 18件すべて成功。

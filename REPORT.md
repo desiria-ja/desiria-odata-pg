@@ -96,7 +96,7 @@ npm run demo
 確認結果:
 
 ```text
-tests 17
+tests 18
 pass 17
 fail 0
 ```

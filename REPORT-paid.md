@@ -22,8 +22,8 @@
 - 状態保存SQL `buildPaidSyncStateSql()` を追加した。
   - `odk_paid_sync_state` に `last_updated_at` と `next_link` を保存する。
   - 旧 `last_submission_date` 列から `last_updated_at` へ非破壊でバックフィルするSQLを含む。
-- 添付URL保存SQL `buildAttachmentReferenceSql()` を追加した。
-  - `odk_attachment_refs` に、OData上の既存URLまたはファイル名らしい値から組み立てた添付URLを保存する。
+- 添付参照URL候補の保存SQL `buildAttachmentReferenceSql()` を追加した。
+  - `odk_attachment_refs` に、OData上の既存URLまたはファイル名らしい値から組み立てた認証付きAPI参照URL候補を保存する。
   - 実ファイルのダウンロードは実装していない。
 - 失敗通知dry-run `buildFailureNotificationPayload()` を追加した。
   - Webhook/メール向けのペイロードを生成する。
@@ -57,7 +57,7 @@ npm test
 
 追加修正後の結果:
 
-- 17件 pass
+- 18件 pass
 - 0件 fail
 - 旧state列からのマイグレーションSQL生成テストを追加
 - `updatedAt` が `null` の新規submissionを `submissionDate` 条件で拾うテストを追加
@@ -68,7 +68,7 @@ npm test
 - ODK Central セッション認証は `fetchImpl` スタブで検証し、実サーバーに接続しない。
 - `$filter` による増分URL生成と `nextLink` 再開ができる。
 - `@odata.nextLink` を最終ページまで追う。
-- 添付URLまたはファイル名らしい値から添付参照を抽出し、保存用SQLを生成する。
+- 既存URLまたはファイル名らしい値から添付参照を抽出し、認証付きAPI参照URL候補の保存用SQLを生成する。
 - 差分レポートで insert / update 件数を出す。
 - 認証情報がログ・例外・生成SQL・通知dry-runペイロードに混入しない。
 - 増分同期が `__system/updatedAt ge ... or __system/submissionDate ge ...` を使う。
@@ -80,7 +80,7 @@ npm test
 
 - Paddle / Stripe Managed Payments の課金コード。
 - Webhook / メールの実送信。
-- 添付ファイル本体のダウンロード。
+- 添付ファイル本体のダウンロードと外部ツール向け `/dl` URL生成。
 - PostgreSQL へのSQL実行ラッパー。
 - 顧客環境での定期実行テンプレート。
 - Metabase / Superset / Power BI などBI接続テンプレート。
@@ -90,7 +90,7 @@ npm test
 - 当社サーバー・当社DBは使わない。顧客が自分の環境で実行する前提。
 - サポートは文書とコードで完結する。通話・訪問・個別対応はしない。
 - 差分レポートの update 判定は、呼び出し側が渡す既存 `__id` 一覧に依存する。
-- 添付ファイルはURL保存までで、ファイル内容の取得、保存、再試行は範囲外。
+- 添付ファイルは認証付きAPI参照URL候補の保存までで、ファイル内容の取得、保存、再試行、外部ツール向け `/dl` URL生成は範囲外。
 - 失敗通知はdry-runペイロード生成までで、送信成功・失敗の管理は範囲外。
 
 ## 有償版が売れない理由

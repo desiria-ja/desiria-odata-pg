@@ -66,3 +66,16 @@ test("builds idempotent PostgreSQL SQL with sync state", () => {
   assert.match(sql, /"odk_sync_state"/);
   assert.match(sql, /\$skiptoken=abc/);
 });
+
+test("keeps the documented demo schema consistent across README, package script, CLI usage, and checked output", async () => {
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+  const cliSource = await readFile(new URL("../src/cli.js", import.meta.url), "utf8");
+  const demoOutput = await readFile(new URL("../demo/example-output.sql", import.meta.url), "utf8");
+
+  assert.match(packageJson.scripts.demo, /--schema submissions_stage --table bird_survey/);
+  assert.match(readme, /--schema submissions_stage --table bird_survey > load\.sql/);
+  assert.match(cliSource, /--schema submissions_stage --table bird_survey/);
+  assert.match(demoOutput, /CREATE SCHEMA IF NOT EXISTS "submissions_stage";/);
+  assert.doesNotMatch(demoOutput, /"odk_stage"/);
+});

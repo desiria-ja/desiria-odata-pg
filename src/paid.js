@@ -267,6 +267,7 @@ export function buildAttachmentReferenceSql({ schema = "public", table, attachme
 
   const qualifiedTable = `${quoteIdent(schema)}."odk_attachment_refs"`;
   const statements = [
+    `CREATE SCHEMA IF NOT EXISTS ${quoteIdent(schema)};`,
     `CREATE TABLE IF NOT EXISTS ${qualifiedTable} (\n  "table_name" text NOT NULL,\n  "submission_id" text NOT NULL,\n  "field_name" text NOT NULL,\n  "url" text NOT NULL,\n  "download_status" text NOT NULL,\n  "discovered_at" timestamptz NOT NULL DEFAULT now(),\n  PRIMARY KEY ("table_name", "submission_id", "field_name", "url")\n);`
   ];
 
@@ -310,6 +311,7 @@ export function buildPaidSyncStateMigrationSql({ schema = "public" } = {}) {
   );
 
   return [
+    `CREATE SCHEMA IF NOT EXISTS ${quoteIdent(schema)};`,
     `CREATE TABLE IF NOT EXISTS ${qualifiedTable} (\n  "table_name" text PRIMARY KEY,\n  "last_updated_at" timestamptz,\n  "next_link" text,\n  "page_count" integer NOT NULL DEFAULT 0,\n  "updated_at" timestamptz NOT NULL DEFAULT now()\n);`,
     `ALTER TABLE ${qualifiedTable} ADD COLUMN IF NOT EXISTS "last_updated_at" timestamptz;`,
     `ALTER TABLE ${qualifiedTable} ADD COLUMN IF NOT EXISTS "next_link" text;`,

@@ -177,9 +177,11 @@ test("runs paid sync dry-run with checkpoint state, attachment URLs, and diff re
     "https://central.example.test/v1/projects/1/forms/bird/submissions/uuid%3Apaid-001/attachments/photo-001.jpg"
   );
   assert.match(result.checkpointSql[0], /\$skiptoken=page-2/);
+  assert.match(result.checkpointSql[0], /CREATE SCHEMA IF NOT EXISTS "odk_stage";/);
   assert.match(result.checkpointSql[1], /2026-08-02T06:00:00.000Z/);
   assert.match(result.finalStateSql, /"odk_paid_sync_state"/);
   assert.match(result.finalStateSql, /"last_updated_at"/);
+  assert.match(result.attachmentSql, /CREATE SCHEMA IF NOT EXISTS "odk_stage";/);
   assert.match(result.attachmentSql, /"odk_attachment_refs"/);
   assert.match(result.attachmentSql, /url_saved_only/);
 });
@@ -279,6 +281,7 @@ test("redacts credentials from errors, generated SQL, attachment URLs, and dry-r
 test("builds a non-destructive migration from last_submission_date to last_updated_at", () => {
   const sql = buildPaidSyncStateMigrationSql({ schema: "odk_stage" });
 
+  assert.match(sql, /CREATE SCHEMA IF NOT EXISTS "odk_stage";/);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS "odk_stage"\."odk_paid_sync_state"/);
   assert.match(sql, /ADD COLUMN IF NOT EXISTS "last_updated_at" timestamptz/);
   assert.match(sql, /column_name = 'last_submission_date'/);
