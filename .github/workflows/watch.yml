@@ -1,0 +1,57 @@
+name: Watch
+# PCが閉じていても GitHub のサーバーで動く。費用は公開リポジトリなら0円。
+on:
+  schedule:
+    - cron: '17 21 * * *'   # 毎日 06:17 JST（:00 を避ける）
+  workflow_dispatch:
+permissions:
+  contents: write
+  issues: write
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 実測を記録する（GitHub公式の数値のみ。推定を混ぜない）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          mkdir -p metrics
+          F=metrics/traffic.csv
+          [ -f "$F" ] || echo "date,repo,stars,views,unique_views,clones,unique_clones" > "$F"
+          R=${GITHUB_REPOSITORY}
+          D=$(date -u +%Y-%m-%d)
+          S=$(gh api "repos/$R" --jq '.stargazers_count')
+          V=$(gh api "repos/$R/traffic/views" --jq '[.count,.uniques]|@csv' || echo ",")
+          C=$(gh api "repos/$R/traffic/clones" --jq '[.count,.uniques]|@csv' || echo ",")
+          echo "$D,$R,$S,$V,$C" >> "$F"
+          tail -3 "$F"
+      - name: 変化があったら記録を残す
+        run: |
+          if [ -n "$(git status --porcelain metrics/)" ]; then
+            git config user.name  "Desiria LLC"
+            git config user.email "314548632+desiria-dev@users.noreply.github.com"
+            git add metrics/
+            git commit -m "Record traffic for $(date -u +%Y-%m-%d)"
+            git push
+          else
+            echo "変化なし"
+          fi
+      - name: 🔴 人が見るべき変化が出たら Issue を立てる
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          U=$(gh api "repos/${GITHUB_REPOSITORY}/traffic/views" --jq '.uniques' || echo 0)
+          S=$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.stargazers_count' || echo 0)
+          # 閲覧のユニークが出た、または star が付いた＝人間が来た可能性
+          if [ "${U:-0}" -gt 0 ] || [ "${S:-0}" -gt 0 ]; then
+            EXISTING=$(gh issue list --label signal --state open --json number --jq 'length')
+            if [ "$EXISTING" = "0" ]; then
+              gh issue create --title "実測に変化: unique views=${U} / stars=${S}" \
+                --label signal \
+                --body "自動検出。ボットのクローンではなく **閲覧のユニーク** または **star** が発生した。人間が来た可能性がある。
+2026-08-08 の実績: クローン29ユニークは公開当日に集中し閲覧0だったため、ボットと判定済み。
+今回は閲覧またはstarなので、質が違う。CEOが確認すること。" || true
+            fi
+          fi
