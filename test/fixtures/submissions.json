@@ -1,0 +1,28 @@
+{
+  "@odata.context": "https://central.example.org/v1/projects/2/forms/bird_survey.svc/$metadata#Submissions",
+  "@odata.count": 2,
+  "@odata.nextLink": "https://central.example.org/v1/projects/2/forms/bird_survey.svc/Submissions?$skiptoken=abc",
+  "value": [
+    {
+      "__id": "uuid:11111111-1111-1111-1111-111111111111",
+      "__system/submissionDate": "2026-08-01T10:00:00.000Z",
+      "__system/submitterId": 12,
+      "species": "sparrow",
+      "count": 3,
+      "location": {
+        "type": "Point",
+        "coordinates": [139.767, 35.681]
+      },
+      "photo": "sparrow.jpg"
+    },
+    {
+      "__id": "uuid:22222222-2222-2222-2222-222222222222",
+      "__system/submissionDate": "2026-08-02T11:00:00.000Z",
+      "__system/submitterId": 13,
+      "species": "crow",
+      "count": 1,
+      "notes/field": "seen near station",
+      "photo": null
+    }
+  ]
+}

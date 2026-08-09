@@ -1,0 +1,17 @@
+{
+  "name": "odk-central-pg-lite",
+  "version": "0.1.0",
+  "description": "Generate idempotent PostgreSQL SQL from ODK Central OData JSON exports.",
+  "type": "module",
+  "bin": {
+    "odk-central-pg-lite": "./src/cli.js"
+  },
+  "scripts": {
+    "demo": "node src/cli.js test/fixtures/submissions.json --schema odk_stage --table bird_survey",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}
