@@ -1,7 +1,7 @@
 # Line C Report: ODK Central OData -> PostgreSQL
 
 作成日: 2026-08-09  
-結論: 1つに絞る。作るものは `odk-central-pg-lite`。ODK Central の OData JSON を PostgreSQL 向けの冪等SQLへ変換するOSSを公開し、有償版は認証付き取得・増分同期・通知・ホスト型スケジューラに限定する。
+結論: 1つに絞る。作るものは `desiria-odata-pg`。ODK Central の OData JSON を PostgreSQL 向けの冪等SQLへ変換するOSSを公開し、有償版は顧客の既存実行環境で動かす認証付き取得・増分同期・通知・差分レポートに限定する。
 
 ## 1. 競合と需要の実測
 
@@ -46,7 +46,7 @@
 
 ## 2. 作るものの仕様
 
-名前: `odk-central-pg-lite`
+名前: `desiria-odata-pg`
 
 対象: ODK Central の OData JSONを、PostgreSQLに安全に流し込むためのSQLへ変換するCLI/ライブラリ。
 
@@ -66,10 +66,10 @@
 
 - ODK Centralからの認証付き取得
 - `$filter` / `$skiptoken`による増分同期
-- cron不要のホスト型スケジューラ
+- 顧客の既存cron、既存CI、既存バッチ環境で動かす同期スクリプト例
 - 失敗通知、再試行、差分レポート
 - Metabase/Superset/Power BI用の接続テンプレート
-- PaddleまたはStripe Managed Paymentsで月額¥9,800。2027年3月の月商173万円は180件で¥1,764,000。
+- 価格は未定。価格決定はCEO決裁事項のため、実装側では決めない。2027年3月の月商173万円は、共通ブリーフ上の月額¥5,000〜10,000レンジなら課金180〜360件相当。
 
 有償化しないもの: 導入代行、通話サポート、個別ダッシュボード制作。会社制約により役務は不可。
 
@@ -96,8 +96,8 @@ npm run demo
 確認結果:
 
 ```text
-tests 7
-pass 7
+tests 17
+pass 17
 fail 0
 ```
 
@@ -126,4 +126,4 @@ Tests and demo SQL are included.
 
 ## 6. この線を捨てるべき理由
 
-既にcentral2pgとpl-pyODKがあり、画面上の数字ではcentral2pgが24 stars、pl-pyODKが9 starsに留まる。公開需要は存在するが、OSS利用者がそのまま月額¥9,800を払う意思までは実測できていない。6週間で有効化10人または有料1件に届かなければ、技術的には正しくても市場線として捨てる。
+既にcentral2pgとpl-pyODKがあり、画面上の数字ではcentral2pgが24 stars、pl-pyODKが9 starsに留まる。公開需要は存在するが、OSS利用者が有償版に払う意思までは実測できていない。6週間で有効化10人または有料1件に届かなければ、技術的には正しくても市場線として捨てる。

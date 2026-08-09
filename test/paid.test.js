@@ -5,6 +5,7 @@ import {
   buildDiffReport,
   buildFailureNotificationPayload,
   buildIncrementalODataUrl,
+  buildPaidSyncStateMigrationSql,
   buildPaidSyncStateSql,
   createOdkSession,
   fetchAllPaidPages,
@@ -64,7 +65,10 @@ test("builds an incremental OData URL from last updatedAt and resumes from nextL
   });
 
   assert.match(url, /forms\/bird%20survey\.svc\/Submissions/);
-  assert.match(decodeURIComponent(url).replaceAll("+", " "), /\$filter=__system\/updatedAt ge 2026-08-01T00:00:00.000Z/);
+  assert.match(
+    decodeURIComponent(url).replaceAll("+", " "),
+    /\$filter=__system\/updatedAt ge 2026-08-01T00:00:00.000Z or __system\/submissionDate ge 2026-08-01T00:00:00.000Z/
+  );
 
   const resumed = buildIncrementalODataUrl({
     baseUrl: "https://central.example.test",
@@ -73,6 +77,56 @@ test("builds an incremental OData URL from last updatedAt and resumes from nextL
     nextLink: "https://central.example.test/odata?$skiptoken=abc"
   });
   assert.equal(resumed, "https://central.example.test/odata?$skiptoken=abc");
+});
+
+test("includes newly created submissions whose updatedAt is null", async () => {
+  const newSubmissionPage = {
+    value: [
+      {
+        "__id": "uuid:new-001",
+        "__system/submissionDate": "2026-08-03T10:00:00.000Z",
+        "__system/updatedAt": null,
+        "species": "egret"
+      }
+    ]
+  };
+  const requestedUrls = [];
+  const fetchImpl = async (url) => {
+    requestedUrls.push(decodeURIComponent(url).replaceAll("+", " "));
+    return jsonResponse(newSubmissionPage);
+  };
+
+  const result = await runPaidSyncDryRun({
+    baseUrl: "https://central.example.test",
+    projectId: 1,
+    formId: "bird",
+    targetTable: "bird_survey",
+    state: { lastUpdatedAt: "2026-08-02T00:00:00.000Z" },
+    session: { token: "session-token-123" },
+    fetchImpl
+  });
+
+  assert.match(requestedUrls[0], /__system\/updatedAt ge 2026-08-02T00:00:00.000Z/);
+  assert.match(requestedUrls[0], /__system\/submissionDate ge 2026-08-02T00:00:00.000Z/);
+  assert.equal(result.rows[0].species, "egret");
+  assert.equal(result.state.lastUpdatedAt, "2026-08-03T10:00:00.000Z");
+});
+
+test("prefixes root submission metadata when filtering repeat tables", () => {
+  const url = buildIncrementalODataUrl({
+    baseUrl: "https://central.example.test",
+    projectId: 1,
+    formId: "bird",
+    tableName: "Submissions.children.child",
+    lastUpdatedAt: "2026-08-02T00:00:00.000Z"
+  });
+  const decoded = decodeURIComponent(url).replaceAll("+", " ");
+
+  assert.match(decoded, /forms\/bird\.svc\/Submissions\.children\.child/);
+  assert.match(
+    decoded,
+    /\$filter=\$root\/Submissions\/__system\/updatedAt ge 2026-08-02T00:00:00.000Z or \$root\/Submissions\/__system\/submissionDate ge 2026-08-02T00:00:00.000Z/
+  );
 });
 
 test("follows @odata.nextLink until the final page", async () => {
@@ -178,6 +232,7 @@ test("picks up an edited submission on the second incremental sync", async () =>
   });
 
   assert.match(requestedUrls[1], /\$filter=__system\/updatedAt ge 2026-08-01T00:00:00.000Z/);
+  assert.match(requestedUrls[1], /__system\/submissionDate ge 2026-08-01T00:00:00.000Z/);
   assert.equal(second.rows[0].species, "sparrow edited");
   assert.equal(second.state.lastUpdatedAt, "2026-08-03T09:30:00.000Z");
   assert.deepEqual(second.report, { inserted: 0, updated: 1, total: 1 });
@@ -219,6 +274,24 @@ test("redacts credentials from errors, generated SQL, attachment URLs, and dry-r
   assert.equal(notification.dryRun, true);
   assert.doesNotMatch(JSON.stringify(notification), /session-token-123/);
   assert.doesNotMatch(JSON.stringify(notification), /password-123/);
+});
+
+test("builds a non-destructive migration from last_submission_date to last_updated_at", () => {
+  const sql = buildPaidSyncStateMigrationSql({ schema: "odk_stage" });
+
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS "odk_stage"\."odk_paid_sync_state"/);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS "last_updated_at" timestamptz/);
+  assert.match(sql, /column_name = 'last_submission_date'/);
+  assert.match(sql, /SET "last_updated_at" = "last_submission_date"/);
+  assert.doesNotMatch(sql, /DROP COLUMN/);
+
+  const stateSql = buildPaidSyncStateSql({
+    schema: "odk_stage",
+    table: "bird_survey",
+    lastUpdatedAt: "2026-08-02T05:00:00.000Z"
+  });
+  assert.match(stateSql, /column_name = 'last_submission_date'/);
+  assert.match(stateSql, /INSERT INTO "odk_stage"\."odk_paid_sync_state"/);
 });
 
 test("classifies insert and update counts for the sync diff report", () => {

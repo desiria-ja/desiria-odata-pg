@@ -39,19 +39,17 @@ psql "$DATABASE_URL" -f load.sql
 | OData JSON 変換 | 対応 | 対応 |
 | 列名正規化 | 対応 | 対応 |
 | `INSERT ... ON CONFLICT` | 対応 | 対応 |
-| 状態SQL生成 | `odk_sync_state` への `nextLink` 保存 | `odk_paid_sync_state` への `last_updated_at` / `nextLink` 保存 |
+| 状態SQL生成 | `odk_sync_state` への `nextLink` 保存 | `odk_paid_sync_state` への `last_updated_at` / `nextLink` 保存。旧 `last_submission_date` 列からの非破壊バックフィルSQLを含む |
 | ODK Central 認証付き取得 | 範囲外 | `/v1/sessions` のセッション認証で取得。トークンはログ、例外、SQLに出さない |
-| 増分同期 | 範囲外 | `$filter` の `__system/updatedAt ge last_updated_at` 以降、または保存済み `nextLink` から再開 |
+| 増分同期 | 範囲外 | `$filter` の `__system/updatedAt ge last_updated_at or __system/submissionDate ge last_updated_at` 以降、または保存済み `nextLink` から再開 |
 | ページング | 1ファイル変換のみ | `@odata.nextLink` を最後まで追跡 |
-| 添付ファイル | OData JSON 内の値として扱うのみ | OData 上のファイル名から `/v1/projects/{projectId}/forms/{xmlFormId}/submissions/{instanceId}/attachments/{filename}` のダウンロードURLを組み立て、`odk_attachment_refs` 用SQLとして保存。実ファイルのダウンロードは範囲外 |
+| 添付ファイル | OData JSON 内の値として扱うのみ | OData 上のメディアURL、またはファイル名らしい値から組み立てた `/v1/projects/{projectId}/forms/{xmlFormId}/submissions/{instanceId}/attachments/{filename}` を `odk_attachment_refs` 用SQLとして保存。実ファイルのダウンロードは範囲外 |
 | 失敗通知 | 範囲外 | Webhook/メール向けペイロード生成とdry-runのみ。送信はしない |
 | 差分レポート | 範囲外 | 今回同期分の insert / update / total を出力 |
 | ホスティング | なし | なし。当社サーバー・当社DBは使わない |
 | 課金コード | なし | なし。Paddle / Stripe Managed Payments のMoR契約後に別途実装 |
 
-有償版価格: 月額¥9,800 / 組織。
-
-支払い導線はまだありません。Merchant of Record 契約前のため、README には購入リンクや課金コードを置いていません。
+有償版価格は未定です。価格決定はCEO決裁事項です。Merchant of Record 契約前のため、README には購入リンクや課金コードを置いていません。
 
 ## 有償版で自動化されること
 
@@ -60,7 +58,7 @@ psql "$DATABASE_URL" -f load.sql
 | ODK Central にログインして OData URL を取得する | `createOdkSession()` でセッション認証を行う |
 | 前回どこまで同期したかをメモする | `odk_paid_sync_state` 用SQLで `last_updated_at` と `nextLink` を保存する |
 | OData の次ページURLを手で追う | `fetchAllPaidPages()` が `@odata.nextLink` を完走する |
-| 添付ファイルURLを各行から探す | `collectAttachmentReferences()` が OData 上のファイル名から添付ダウンロードURLを組み立て、保存用SQLを生成する |
+| 添付ファイルURLを各行から探す | `collectAttachmentReferences()` が OData 上の既存URLまたはファイル名らしい値から添付ダウンロードURLを組み立て、保存用SQLを生成する |
 | 失敗時に通知文面を手で作る | `buildFailureNotificationPayload()` がWebhook/メール向けdry-runペイロードを作る |
 | 今回何件増えたかを目視確認する | `buildDiffReport()` が insert / update / total を返す |
 
@@ -70,7 +68,15 @@ psql "$DATABASE_URL" -f load.sql
 
 OIDC SSO が有効な ODK Central 環境では、ODK Central 側で HTTP Basic 認証と `POST /v1/sessions` ログインが無効になります。この製品の有償版取得処理は現時点で `/v1/sessions` のセッション認証のみを実装しているため、OIDC SSO 有効環境では動作対象外です。
 
-増分同期は ODK Central の `__system/updatedAt` を基準にします。`submissionDate` は作成時刻であり、編集時刻ではないため使いません。取り込んだ行の最大 `updatedAt` を `last_updated_at` に保存し、次回は `ge` で再取得します。同一時刻の境界行は二重取得される可能性がありますが、`__id` 主キーの UPSERT により冪等です。`updatedAt` が行に無い古いデータでは、その行のチェックポイント計算だけ `submissionDate` にフォールバックします。
+増分同期は ODK Central の `__system/updatedAt` と `__system/submissionDate` を併用します。`updatedAt` は初回作成時に空になり得るため、新規submissionは `submissionDate`、編集済みsubmissionは `updatedAt` で拾います。取り込んだ行の最大 `updatedAt`、または `updatedAt` が空の行では `submissionDate` を `last_updated_at` に保存し、次回は `ge` で再取得します。同一時刻の境界行は二重取得される可能性がありますが、`__id` 主キーの UPSERT により冪等です。
+
+repeat table の増分同期では、ODK OData の仕様に合わせて root submission metadata を `$root/Submissions/__system/...` で参照します。
+
+削除済みsubmissionの反映は未実装です。ODK Central の `__system/deletedAt` は現時点で同期条件にも状態計算にも含めていません。
+
+以前の有償境界コードで `odk_paid_sync_state.last_submission_date` を作った環境向けに、`buildPaidSyncStateMigrationSql()` と `buildPaidSyncStateSql()` は `last_updated_at` を追加し、旧列が存在する場合は値をバックフィルします。旧列は削除しません。
+
+添付ファイル判定は OData メタデータを読まず、既存URLと一般的な添付ファイル拡張子に見える文字列を対象にします。メディア型フィールドの厳密判定は未実装です。
 
 ## Kill Criteria
 

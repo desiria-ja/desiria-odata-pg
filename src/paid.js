@@ -104,12 +104,16 @@ export function buildIncrementalODataUrl({
     if (Number.isNaN(since.getTime())) {
       throw new TypeError("lastUpdatedAt must be a valid date");
     }
-    // Use updatedAt, not submissionDate: submissionDate is the creation timestamp,
-    // so edited submissions would otherwise be missed. We intentionally use `ge`
-    // against the saved max updatedAt. Rows exactly on the boundary can be read
-    // twice, but downstream UPSERTs are idempotent; `gt` risks missing rows when
-    // Central stores multiple updates with the same timestamp precision.
-    url.searchParams.set("$filter", `__system/updatedAt ge ${since.toISOString()}`);
+    const systemPrefix = tableName === "Submissions" ? "__system" : "$root/Submissions/__system";
+    // updatedAt is null on first creation in Central. Filter on both clocks:
+    // submissionDate catches new rows, updatedAt catches edits. Repeat tables
+    // must reference root submission metadata with $root/Submissions.
+    // We intentionally use `ge`; boundary rows can be read twice, but downstream
+    // UPSERTs are idempotent and `gt` risks missing same-precision updates.
+    url.searchParams.set(
+      "$filter",
+      `${systemPrefix}/updatedAt ge ${since.toISOString()} or ${systemPrefix}/submissionDate ge ${since.toISOString()}`
+    );
   }
 
   return url.toString();
@@ -293,8 +297,31 @@ export function buildPaidSyncStateSql({
   const checkpoint = lastUpdatedAt ?? lastSubmissionDate;
 
   return [
-    `CREATE TABLE IF NOT EXISTS ${qualifiedTable} (\n  "table_name" text PRIMARY KEY,\n  "last_updated_at" timestamptz,\n  "next_link" text,\n  "page_count" integer NOT NULL DEFAULT 0,\n  "updated_at" timestamptz NOT NULL DEFAULT now()\n);`,
+    buildPaidSyncStateMigrationSql({ schema }),
     `INSERT INTO ${qualifiedTable} ("table_name", "last_updated_at", "next_link", "page_count", "updated_at")\nVALUES (${quoteLiteral(table)}, ${quoteLiteral(checkpoint)}, ${quoteLiteral(cleanNextLink)}, ${Number(pageCount)}, now())\nON CONFLICT ("table_name") DO UPDATE SET\n  "last_updated_at" = EXCLUDED."last_updated_at",\n  "next_link" = EXCLUDED."next_link",\n  "page_count" = EXCLUDED."page_count",\n  "updated_at" = now();`
+  ].join("\n\n");
+}
+
+export function buildPaidSyncStateMigrationSql({ schema = "public" } = {}) {
+  const qualifiedTable = `${quoteIdent(schema)}."odk_paid_sync_state"`;
+  const schemaLiteral = quoteLiteral(schema);
+  const backfillSql = quoteLiteral(
+    `UPDATE ${qualifiedTable}\nSET "last_updated_at" = "last_submission_date"\nWHERE "last_updated_at" IS NULL`
+  );
+
+  return [
+    `CREATE TABLE IF NOT EXISTS ${qualifiedTable} (\n  "table_name" text PRIMARY KEY,\n  "last_updated_at" timestamptz,\n  "next_link" text,\n  "page_count" integer NOT NULL DEFAULT 0,\n  "updated_at" timestamptz NOT NULL DEFAULT now()\n);`,
+    `ALTER TABLE ${qualifiedTable} ADD COLUMN IF NOT EXISTS "last_updated_at" timestamptz;`,
+    `ALTER TABLE ${qualifiedTable} ADD COLUMN IF NOT EXISTS "next_link" text;`,
+    `ALTER TABLE ${qualifiedTable} ADD COLUMN IF NOT EXISTS "page_count" integer;`,
+    `UPDATE ${qualifiedTable}\nSET "page_count" = 0\nWHERE "page_count" IS NULL;`,
+    `ALTER TABLE ${qualifiedTable} ALTER COLUMN "page_count" SET DEFAULT 0;`,
+    `ALTER TABLE ${qualifiedTable} ALTER COLUMN "page_count" SET NOT NULL;`,
+    `ALTER TABLE ${qualifiedTable} ADD COLUMN IF NOT EXISTS "updated_at" timestamptz;`,
+    `UPDATE ${qualifiedTable}\nSET "updated_at" = now()\nWHERE "updated_at" IS NULL;`,
+    `ALTER TABLE ${qualifiedTable} ALTER COLUMN "updated_at" SET DEFAULT now();`,
+    `ALTER TABLE ${qualifiedTable} ALTER COLUMN "updated_at" SET NOT NULL;`,
+    `DO $$\nBEGIN\n  IF EXISTS (\n    SELECT 1\n    FROM information_schema.columns\n    WHERE table_schema = ${schemaLiteral}\n      AND table_name = 'odk_paid_sync_state'\n      AND column_name = 'last_submission_date'\n  ) THEN\n    EXECUTE ${backfillSql};\n  END IF;\nEND $$;`
   ].join("\n\n");
 }
 

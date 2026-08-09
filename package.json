@@ -4,7 +4,7 @@
   "description": "Generate idempotent PostgreSQL SQL from ODK Central OData JSON exports.",
   "type": "module",
   "bin": {
-    "odk-central-pg-lite": "./src/cli.js"
+    "desiria-odata-pg": "./src/cli.js"
   },
   "scripts": {
     "demo": "node src/cli.js test/fixtures/submissions.json --schema odk_stage --table bird_survey",

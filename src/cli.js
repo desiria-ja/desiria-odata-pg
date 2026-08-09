@@ -4,7 +4,7 @@ import { buildSql } from "./index.js";
 
 function usage() {
   return [
-    "Usage: odk-central-pg-lite <odata-json-file> --schema <schema> --table <table>",
+    "Usage: desiria-odata-pg <odata-json-file> --schema <schema> --table <table>",
     "",
     "Example:",
     "  node src/cli.js test/fixtures/submissions.json --schema odk_stage --table bird_survey"
