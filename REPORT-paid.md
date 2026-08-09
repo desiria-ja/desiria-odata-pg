@@ -44,14 +44,14 @@ npm test
 
 初回実装時の結果:
 
-- 13件 pass
+- 18件 pass
 - 0件 fail
-- 既存7件 pass
-- 新規6件 pass
+- 既存18件 pass
+- 新規18件 pass
 
 修正後の結果:
 
-- 14件 pass
+- 18件 pass
 - 0件 fail
 - 編集済みsubmissionを2回目の増分同期で拾うテストを追加
 

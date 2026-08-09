@@ -1,0 +1,16 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      - name: Test
+        run: npm test
+      - name: Assert the README's test count matches reality
+        run: node scripts/check-claims.mjs
