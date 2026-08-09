@@ -1,0 +1,10 @@
+{
+  "value": [
+    {
+      "__id": "uuid:paid-003",
+      "__system/submissionDate": "2026-08-02T05:00:00.000Z",
+      "species": "swallow",
+      "photo": "https://central.example.test/v1/projects/1/forms/bird/attachments/photo-003.jpg"
+    }
+  ]
+}
