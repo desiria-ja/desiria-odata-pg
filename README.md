@@ -1,8 +1,12 @@
-# odk-central-pg-lite
+# desiria-odata-pg
+
+This project is not created, endorsed by, or affiliated with ODK. ODK and ODK Central are trademarks of their respective owners. Desiria LLC is an independent third party.
+
+Built by an AI agent operating on behalf of Desiria LLC. We say so up front because some organisations restrict AI-assisted work.
 
 ODK Central の OData JSON を PostgreSQL に冪等ロードするための SQL に変換する最小CLIです。
 
-無料OSSの範囲は、ローカルでの JSON -> SQL 変換、カラム正規化、`__id` を主キーにした UPSERT、`@odata.nextLink` の同期状態SQL生成までです。有償版は、顧客自身の実行環境で ODK Central から認証付き取得を行い、増分同期の状態、添付URL、通知ペイロード、差分レポートを扱う境界です。
+無料OSSの範囲は、ローカルでの JSON -> SQL 変換、カラム正規化、`__id` を主キーにした UPSERT、`@odata.nextLink` の同期状態SQL生成までです。有償版は、顧客自身の実行環境で ODK Central から認証付き取得を行い、増分同期の状態、添付ダウンロードURL、通知ペイロード、差分レポートを扱う境界です。
 
 当社はこの製品のために新しいサーバーやDBを借りません。同期処理は顧客のPC、社内サーバー、既存CI、既存バッチ環境などで実行する前提です。
 
@@ -35,11 +39,11 @@ psql "$DATABASE_URL" -f load.sql
 | OData JSON 変換 | 対応 | 対応 |
 | 列名正規化 | 対応 | 対応 |
 | `INSERT ... ON CONFLICT` | 対応 | 対応 |
-| 状態SQL生成 | `odk_sync_state` への `nextLink` 保存 | `odk_paid_sync_state` への `last_submission_date` / `nextLink` 保存 |
-| ODK Central 認証付き取得 | 範囲外 | セッション認証で取得。トークンはログ、例外、SQLに出さない |
-| 増分同期 | 範囲外 | `$filter` の `__system/submissionDate` 以降、または保存済み `nextLink` から再開 |
+| 状態SQL生成 | `odk_sync_state` への `nextLink` 保存 | `odk_paid_sync_state` への `last_updated_at` / `nextLink` 保存 |
+| ODK Central 認証付き取得 | 範囲外 | `/v1/sessions` のセッション認証で取得。トークンはログ、例外、SQLに出さない |
+| 増分同期 | 範囲外 | `$filter` の `__system/updatedAt ge last_updated_at` 以降、または保存済み `nextLink` から再開 |
 | ページング | 1ファイル変換のみ | `@odata.nextLink` を最後まで追跡 |
-| 添付ファイル | OData JSON 内の値として扱うのみ | 添付URLを `odk_attachment_refs` 用SQLとして保存。実ファイルのダウンロードは範囲外 |
+| 添付ファイル | OData JSON 内の値として扱うのみ | OData 上のファイル名から `/v1/projects/{projectId}/forms/{xmlFormId}/submissions/{instanceId}/attachments/{filename}` のダウンロードURLを組み立て、`odk_attachment_refs` 用SQLとして保存。実ファイルのダウンロードは範囲外 |
 | 失敗通知 | 範囲外 | Webhook/メール向けペイロード生成とdry-runのみ。送信はしない |
 | 差分レポート | 範囲外 | 今回同期分の insert / update / total を出力 |
 | ホスティング | なし | なし。当社サーバー・当社DBは使わない |
@@ -54,13 +58,19 @@ psql "$DATABASE_URL" -f load.sql
 | 手作業 | 有償版 |
 |---|---|
 | ODK Central にログインして OData URL を取得する | `createOdkSession()` でセッション認証を行う |
-| 前回どこまで同期したかをメモする | `odk_paid_sync_state` 用SQLで `last_submission_date` と `nextLink` を保存する |
+| 前回どこまで同期したかをメモする | `odk_paid_sync_state` 用SQLで `last_updated_at` と `nextLink` を保存する |
 | OData の次ページURLを手で追う | `fetchAllPaidPages()` が `@odata.nextLink` を完走する |
-| 添付ファイルURLを各行から探す | `collectAttachmentReferences()` が添付URLを抽出し、保存用SQLを生成する |
+| 添付ファイルURLを各行から探す | `collectAttachmentReferences()` が OData 上のファイル名から添付ダウンロードURLを組み立て、保存用SQLを生成する |
 | 失敗時に通知文面を手で作る | `buildFailureNotificationPayload()` がWebhook/メール向けdry-runペイロードを作る |
 | 今回何件増えたかを目視確認する | `buildDiffReport()` が insert / update / total を返す |
 
 有償版は `src/paid.js` に分離しています。HTTP処理は `fetchImpl` を注入する設計なので、CIでは実サーバーに接続せず fixture とスタブで検証できます。
+
+## 制約
+
+OIDC SSO が有効な ODK Central 環境では、ODK Central 側で HTTP Basic 認証と `POST /v1/sessions` ログインが無効になります。この製品の有償版取得処理は現時点で `/v1/sessions` のセッション認証のみを実装しているため、OIDC SSO 有効環境では動作対象外です。
+
+増分同期は ODK Central の `__system/updatedAt` を基準にします。`submissionDate` は作成時刻であり、編集時刻ではないため使いません。取り込んだ行の最大 `updatedAt` を `last_updated_at` に保存し、次回は `ge` で再取得します。同一時刻の境界行は二重取得される可能性がありますが、`__id` 主キーの UPSERT により冪等です。`updatedAt` が行に無い古いデータでは、その行のチェックポイント計算だけ `submissionDate` にフォールバックします。
 
 ## Kill Criteria
 

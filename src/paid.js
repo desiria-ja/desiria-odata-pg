@@ -7,6 +7,7 @@ import {
 
 const SECRET_QUERY_KEY = /(?:authorization|bearer|cookie|password|passcode|secret|session|token|api[_-]?key|jwt)/i;
 const ATTACHMENT_LINK_KEY = /(?:attachment|download|media).*url|(?:media|download).*link/i;
+const ATTACHMENT_FILENAME = /\.(?:jpg|jpeg|png|gif|webp|bmp|tif|tiff|heic|heif|mp3|wav|m4a|aac|ogg|mp4|mov|avi|webm|3gp|pdf|csv|txt|log)$/i;
 
 export class PaidSyncError extends Error {
   constructor(message, details = {}) {
@@ -84,6 +85,7 @@ export function buildIncrementalODataUrl({
   projectId,
   formId,
   tableName = "Submissions",
+  lastUpdatedAt,
   lastSubmissionDate,
   nextLink
 }) {
@@ -96,12 +98,18 @@ export function buildIncrementalODataUrl({
   const encodedTableName = encodeURIComponent(tableName);
   const url = new URL(`/v1/projects/${projectId}/forms/${encodedFormId}.svc/${encodedTableName}`, baseUrl);
 
-  if (lastSubmissionDate) {
-    const since = new Date(lastSubmissionDate);
+  const checkpoint = lastUpdatedAt ?? lastSubmissionDate;
+  if (checkpoint) {
+    const since = new Date(checkpoint);
     if (Number.isNaN(since.getTime())) {
-      throw new TypeError("lastSubmissionDate must be a valid date");
+      throw new TypeError("lastUpdatedAt must be a valid date");
     }
-    url.searchParams.set("$filter", `__system/submissionDate ge ${since.toISOString()}`);
+    // Use updatedAt, not submissionDate: submissionDate is the creation timestamp,
+    // so edited submissions would otherwise be missed. We intentionally use `ge`
+    // against the saved max updatedAt. Rows exactly on the boundary can be read
+    // twice, but downstream UPSERTs are idempotent; `gt` risks missing rows when
+    // Central stores multiple updates with the same timestamp precision.
+    url.searchParams.set("$filter", `__system/updatedAt ge ${since.toISOString()}`);
   }
 
   return url.toString();
@@ -174,25 +182,30 @@ export async function runPaidSyncDryRun({
     projectId,
     formId,
     tableName,
-    lastSubmissionDate: state.lastSubmissionDate,
+    lastUpdatedAt: state.lastUpdatedAt ?? state.last_updated_at,
+    lastSubmissionDate: state.lastSubmissionDate ?? state.last_submission_date,
     nextLink: state.nextLink
   });
   const pages = await fetchAllPaidPages({ initialUrl, session, fetchImpl, logger });
   const rows = pages.flatMap((page) => page.normalized.rows);
   const rawRows = pages.flatMap((page) => (Array.isArray(page.document.value) ? page.document.value : []));
-  const attachments = collectAttachmentReferences(rawRows);
+  const attachments = collectAttachmentReferences(rawRows, { baseUrl, projectId, formId });
   const report = buildDiffReport({ rows, knownSubmissionIds });
-  const lastSubmissionDate = latestSubmissionDate(rows, state.lastSubmissionDate ?? null);
+  const initialCheckpoint =
+    state.lastUpdatedAt ?? state.last_updated_at ?? state.lastSubmissionDate ?? state.last_submission_date ?? null;
+  const lastUpdatedAt = latestUpdatedAt(rows, initialCheckpoint);
 
-  const checkpoints = pages.map((page) =>
-    buildPaidSyncStateSql({
+  let checkpointUpdatedAt = initialCheckpoint;
+  const checkpoints = pages.map((page) => {
+    checkpointUpdatedAt = latestUpdatedAt(page.normalized.rows, checkpointUpdatedAt);
+    return buildPaidSyncStateSql({
       schema,
       table: targetTable,
-      lastSubmissionDate: latestSubmissionDate(page.normalized.rows, state.lastSubmissionDate ?? null),
+      lastUpdatedAt: checkpointUpdatedAt,
       nextLink: page.nextLink,
       pageCount: 1
-    })
-  );
+    });
+  });
 
   return {
     dryRun: true,
@@ -201,7 +214,7 @@ export async function runPaidSyncDryRun({
     report,
     state: {
       tableName: targetTable,
-      lastSubmissionDate,
+      lastUpdatedAt,
       nextLink: null,
       completed: true
     },
@@ -209,7 +222,7 @@ export async function runPaidSyncDryRun({
     finalStateSql: buildPaidSyncStateSql({
       schema,
       table: targetTable,
-      lastSubmissionDate,
+      lastUpdatedAt,
       nextLink: null,
       pageCount: pages.length
     }),
@@ -217,7 +230,7 @@ export async function runPaidSyncDryRun({
   };
 }
 
-export function collectAttachmentReferences(rows) {
+export function collectAttachmentReferences(rows, context = {}) {
   const attachments = [];
 
   for (const row of rows) {
@@ -227,12 +240,15 @@ export function collectAttachmentReferences(rows) {
 
     for (const [fieldName, value] of Object.entries(row)) {
       if (fieldName.startsWith("@odata.")) continue;
-      const urls = attachmentUrlsFromValue(value);
-      for (const url of urls) {
+      const references = attachmentReferencesFromValue(value, {
+        ...context,
+        submissionId
+      });
+      for (const reference of references) {
         attachments.push({
           submissionId,
           fieldName: normalizeColumnName(fieldName),
-          url: sanitizeUrl(url),
+          url: sanitizeUrl(reference.url),
           downloadStatus: "url_saved_only"
         });
       }
@@ -262,6 +278,7 @@ export function buildAttachmentReferenceSql({ schema = "public", table, attachme
 export function buildPaidSyncStateSql({
   schema = "public",
   table,
+  lastUpdatedAt = null,
   lastSubmissionDate = null,
   nextLink = null,
   pageCount = 0
@@ -270,10 +287,14 @@ export function buildPaidSyncStateSql({
 
   const qualifiedTable = `${quoteIdent(schema)}."odk_paid_sync_state"`;
   const cleanNextLink = nextLink ? sanitizeUrl(nextLink) : null;
+  // The checkpoint stores the maximum imported __system/updatedAt. If Central
+  // omits updatedAt for an older row, latestUpdatedAt falls back to
+  // __system/submissionDate so creation-only rows still advance deterministically.
+  const checkpoint = lastUpdatedAt ?? lastSubmissionDate;
 
   return [
-    `CREATE TABLE IF NOT EXISTS ${qualifiedTable} (\n  "table_name" text PRIMARY KEY,\n  "last_submission_date" timestamptz,\n  "next_link" text,\n  "page_count" integer NOT NULL DEFAULT 0,\n  "updated_at" timestamptz NOT NULL DEFAULT now()\n);`,
-    `INSERT INTO ${qualifiedTable} ("table_name", "last_submission_date", "next_link", "page_count", "updated_at")\nVALUES (${quoteLiteral(table)}, ${quoteLiteral(lastSubmissionDate)}, ${quoteLiteral(cleanNextLink)}, ${Number(pageCount)}, now())\nON CONFLICT ("table_name") DO UPDATE SET\n  "last_submission_date" = EXCLUDED."last_submission_date",\n  "next_link" = EXCLUDED."next_link",\n  "page_count" = EXCLUDED."page_count",\n  "updated_at" = now();`
+    `CREATE TABLE IF NOT EXISTS ${qualifiedTable} (\n  "table_name" text PRIMARY KEY,\n  "last_updated_at" timestamptz,\n  "next_link" text,\n  "page_count" integer NOT NULL DEFAULT 0,\n  "updated_at" timestamptz NOT NULL DEFAULT now()\n);`,
+    `INSERT INTO ${qualifiedTable} ("table_name", "last_updated_at", "next_link", "page_count", "updated_at")\nVALUES (${quoteLiteral(table)}, ${quoteLiteral(checkpoint)}, ${quoteLiteral(cleanNextLink)}, ${Number(pageCount)}, now())\nON CONFLICT ("table_name") DO UPDATE SET\n  "last_updated_at" = EXCLUDED."last_updated_at",\n  "next_link" = EXCLUDED."next_link",\n  "page_count" = EXCLUDED."page_count",\n  "updated_at" = now();`
   ].join("\n\n");
 }
 
@@ -348,20 +369,22 @@ async function requestJson({ fetchImpl, url, method, headers = {}, body, secrets
   }
 }
 
-function attachmentUrlsFromValue(value) {
+function attachmentReferencesFromValue(value, context) {
   if (typeof value === "string") {
-    return isHttpUrl(value) ? [value] : [];
+    if (isHttpUrl(value)) return [{ url: value }];
+    const url = buildSubmissionAttachmentUrl(value, context);
+    return url ? [{ url }] : [];
   }
 
   if (!value || typeof value !== "object") return [];
 
-  const urls = [];
+  const references = [];
   for (const [key, nestedValue] of Object.entries(value)) {
     if (typeof nestedValue === "string" && isHttpUrl(nestedValue) && ATTACHMENT_LINK_KEY.test(key)) {
-      urls.push(nestedValue);
+      references.push({ url: nestedValue });
     }
   }
-  return urls;
+  return references;
 }
 
 function isHttpUrl(value) {
@@ -373,11 +396,11 @@ function isHttpUrl(value) {
   }
 }
 
-function latestSubmissionDate(rows, fallback) {
+function latestUpdatedAt(rows, fallback) {
   let latest = fallback ? new Date(fallback) : null;
 
   for (const row of rows) {
-    const value = row.__system_submissionDate;
+    const value = row.__system_updatedAt ?? row.__system_submissionDate;
     if (!value) continue;
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) continue;
@@ -385,6 +408,24 @@ function latestSubmissionDate(rows, fallback) {
   }
 
   return latest ? latest.toISOString() : null;
+}
+
+function buildSubmissionAttachmentUrl(filename, { baseUrl, projectId, formId, submissionId }) {
+  if (!baseUrl || projectId === undefined || projectId === null || !formId || !submissionId) return null;
+  if (!isLikelyAttachmentFilename(filename)) return null;
+
+  return new URL(
+    `/v1/projects/${encodePathSegment(projectId)}/forms/${encodePathSegment(formId)}/submissions/${encodePathSegment(submissionId)}/attachments/${encodePathSegment(filename)}`,
+    baseUrl
+  ).toString();
+}
+
+function isLikelyAttachmentFilename(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 255 && ATTACHMENT_FILENAME.test(value);
+}
+
+function encodePathSegment(value) {
+  return encodeURIComponent(String(value));
 }
 
 function resolveNextLink(nextLink, currentUrl, secrets) {

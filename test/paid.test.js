@@ -55,16 +55,16 @@ test("creates an ODK Central session with injected fetch and does not log the pa
   assert.doesNotMatch(logText, /session-token-123/);
 });
 
-test("builds an incremental OData URL from last submission date and resumes from nextLink", () => {
+test("builds an incremental OData URL from last updatedAt and resumes from nextLink", () => {
   const url = buildIncrementalODataUrl({
     baseUrl: "https://central.example.test",
     projectId: 1,
     formId: "bird survey",
-    lastSubmissionDate: "2026-08-01T00:00:00.000Z"
+    lastUpdatedAt: "2026-08-01T00:00:00.000Z"
   });
 
   assert.match(url, /forms\/bird%20survey\.svc\/Submissions/);
-  assert.match(decodeURIComponent(url).replaceAll("+", " "), /\$filter=__system\/submissionDate ge 2026-08-01T00:00:00.000Z/);
+  assert.match(decodeURIComponent(url).replaceAll("+", " "), /\$filter=__system\/updatedAt ge 2026-08-01T00:00:00.000Z/);
 
   const resumed = buildIncrementalODataUrl({
     baseUrl: "https://central.example.test",
@@ -115,13 +115,72 @@ test("runs paid sync dry-run with checkpoint state, attachment URLs, and diff re
 
   assert.equal(result.dryRun, true);
   assert.deepEqual(result.report, { inserted: 2, updated: 1, total: 3 });
-  assert.equal(result.state.lastSubmissionDate, "2026-08-02T05:00:00.000Z");
+  assert.equal(result.state.lastUpdatedAt, "2026-08-02T06:00:00.000Z");
   assert.equal(result.state.nextLink, null);
   assert.equal(result.attachments.length, 3);
+  assert.equal(
+    result.attachments[0].url,
+    "https://central.example.test/v1/projects/1/forms/bird/submissions/uuid%3Apaid-001/attachments/photo-001.jpg"
+  );
   assert.match(result.checkpointSql[0], /\$skiptoken=page-2/);
+  assert.match(result.checkpointSql[1], /2026-08-02T06:00:00.000Z/);
   assert.match(result.finalStateSql, /"odk_paid_sync_state"/);
+  assert.match(result.finalStateSql, /"last_updated_at"/);
   assert.match(result.attachmentSql, /"odk_attachment_refs"/);
   assert.match(result.attachmentSql, /url_saved_only/);
+});
+
+test("picks up an edited submission on the second incremental sync", async () => {
+  const firstPage = {
+    value: [
+      {
+        "__id": "uuid:edited-001",
+        "__system/submissionDate": "2026-08-01T00:00:00.000Z",
+        "__system/updatedAt": "2026-08-01T00:00:00.000Z",
+        "species": "sparrow"
+      }
+    ]
+  };
+  const editedPage = {
+    value: [
+      {
+        "__id": "uuid:edited-001",
+        "__system/submissionDate": "2026-08-01T00:00:00.000Z",
+        "__system/updatedAt": "2026-08-03T09:30:00.000Z",
+        "species": "sparrow edited"
+      }
+    ]
+  };
+  const documentsByCall = [firstPage, editedPage];
+  const requestedUrls = [];
+  const fetchImpl = async (url) => {
+    requestedUrls.push(decodeURIComponent(url).replaceAll("+", " "));
+    return jsonResponse(documentsByCall.shift());
+  };
+
+  const first = await runPaidSyncDryRun({
+    baseUrl: "https://central.example.test",
+    projectId: 1,
+    formId: "bird",
+    targetTable: "bird_survey",
+    session: { token: "session-token-123" },
+    fetchImpl
+  });
+  const second = await runPaidSyncDryRun({
+    baseUrl: "https://central.example.test",
+    projectId: 1,
+    formId: "bird",
+    targetTable: "bird_survey",
+    state: first.state,
+    knownSubmissionIds: ["uuid:edited-001"],
+    session: { token: "session-token-123" },
+    fetchImpl
+  });
+
+  assert.match(requestedUrls[1], /\$filter=__system\/updatedAt ge 2026-08-01T00:00:00.000Z/);
+  assert.equal(second.rows[0].species, "sparrow edited");
+  assert.equal(second.state.lastUpdatedAt, "2026-08-03T09:30:00.000Z");
+  assert.deepEqual(second.report, { inserted: 0, updated: 1, total: 1 });
 });
 
 test("redacts credentials from errors, generated SQL, attachment URLs, and dry-run notifications", async () => {
@@ -145,7 +204,7 @@ test("redacts credentials from errors, generated SQL, attachment URLs, and dry-r
   const sql = buildPaidSyncStateSql({
     schema: "odk_stage",
     table: "bird_survey",
-    lastSubmissionDate: "2026-08-02T05:00:00.000Z",
+    lastUpdatedAt: "2026-08-02T05:00:00.000Z",
     nextLink: "https://central.example.test/odata?token=session-token-123&$skiptoken=abc"
   });
   assert.doesNotMatch(sql, /session-token-123/);

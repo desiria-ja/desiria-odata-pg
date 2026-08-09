@@ -3,12 +3,14 @@
     {
       "__id": "uuid:paid-001",
       "__system/submissionDate": "2026-08-02T03:00:00.000Z",
+      "__system/updatedAt": "2026-08-02T03:00:00.000Z",
       "species": "sparrow",
-      "photo": "https://central.example.test/v1/projects/1/forms/bird/attachments/photo-001.jpg?session=server-secret"
+      "photo": "photo-001.jpg"
     },
     {
       "__id": "uuid:paid-002",
       "__system/submissionDate": "2026-08-02T04:00:00.000Z",
+      "__system/updatedAt": "2026-08-02T06:00:00.000Z",
       "species": "crow",
       "audio": {
         "mediaReadLink": "https://central.example.test/v1/projects/1/forms/bird/attachments/audio-002.wav?token=server-secret"
