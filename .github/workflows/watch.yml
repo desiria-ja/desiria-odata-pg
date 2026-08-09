@@ -11,21 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Record traffic
+      - name: Record what the Actions token can actually read
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
           mkdir -p metrics
-          F=metrics/traffic.csv
+          F=metrics/daily.csv
           if [ ! -f "$F" ]; then
-            echo "date,repo,stars,views,unique_views,clones,unique_clones" > "$F"
+            echo "date,repo,stars,forks,watchers,open_issues" > "$F"
           fi
           D=$(date -u +%Y-%m-%d)
-          S=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.stargazers_count')
-          V=$(gh api "repos/$GITHUB_REPOSITORY/traffic/views" --jq '[.count,.uniques]|@csv')
-          CL=$(gh api "repos/$GITHUB_REPOSITORY/traffic/clones" --jq '[.count,.uniques]|@csv')
-          echo "$D,$GITHUB_REPOSITORY,$S,$V,$CL" >> "$F"
+          ROW=$(gh api "repos/$GITHUB_REPOSITORY" --jq '[.stargazers_count,.forks_count,.subscribers_count,.open_issues_count]|@csv')
+          grep -q "^$D,$GITHUB_REPOSITORY," "$F" || echo "$D,$GITHUB_REPOSITORY,$ROW" >> "$F"
           tail -3 "$F"
       - name: Commit if changed
         run: |
@@ -33,22 +31,22 @@ jobs:
             git config user.name "Desiria LLC"
             git config user.email "314548632+desiria-dev@users.noreply.github.com"
             git add metrics/
-            git commit -m "Record traffic for $(date -u +%Y-%m-%d)"
+            git commit -m "Record daily counts for $(date -u +%Y-%m-%d)"
             git push
           else
             echo "no change"
           fi
-      - name: Open an issue only when a human may have arrived
+      - name: Open an issue the first time a star or fork appears
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          U=$(gh api "repos/$GITHUB_REPOSITORY/traffic/views" --jq '.uniques')
           S=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.stargazers_count')
-          if [ "${U:-0}" -gt 0 ] || [ "${S:-0}" -gt 0 ]; then
+          F=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.forks_count')
+          if [ "${S:-0}" -gt 0 ] || [ "${F:-0}" -gt 0 ]; then
             N=$(gh issue list --label signal --state open --json number --jq 'length')
             if [ "$N" = "0" ]; then
               gh issue create --label signal \
-                --title "Traffic signal: unique views=$U stars=$S" \
-                --body "Opened automatically. Unique page views or a star appeared, which is a different signal from the bot clones that arrived on publication day (29 unique clones with zero views on 2026-08-08). Worth a look."
+                --title "Someone starred or forked this: stars=$S forks=$F" \
+                --body "Opened automatically by the daily watch job. A star or fork is a deliberate human action, unlike the 29 unique clones that arrived on publication day with zero page views. Worth looking at."
             fi
           fi
