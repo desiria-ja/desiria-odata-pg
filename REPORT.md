@@ -81,7 +81,7 @@
 
 - `src/index.js`: 正規化、SQL生成
 - `src/cli.js`: CLI
-- `test/index.test.js`: Node標準テスト7件
+- `test/index.test.js`: Node標準テスト8件
 - `test/fixtures/submissions.json`: ODK OData風サンプル
 - `demo/example-output.sql`: 公開デモ用SQL
 
@@ -97,7 +97,7 @@ npm run demo
 
 ```text
 tests 18
-pass 17
+pass 18
 fail 0
 ```
 
