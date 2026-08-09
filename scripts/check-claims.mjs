@@ -7,9 +7,12 @@ import { execSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 
 const out = execSync('npm test 2>&1 || true', { encoding: 'utf8' });
-const tests = /^ℹ tests (\d+)/m.exec(out)?.[1];
-const pass = /^ℹ pass (\d+)/m.exec(out)?.[1];
-const fail = /^ℹ fail (\d+)/m.exec(out)?.[1];
+// レポータは環境で変わる。TTYでは "ℹ tests 18"、CI（非TTY）ではTAPで "# tests 18"。
+// 2026-08-09、この差でCIが落ちた。両方を受け付ける。
+const num = (k) => new RegExp(`^\\s*(?:ℹ|#)\\s*${k}\\s+(\\d+)`, 'm').exec(out)?.[1];
+const tests = num('tests');
+const pass = num('pass');
+const fail = num('fail');
 
 if (!tests) { console.error('テスト出力を解析できなかった'); process.exit(1); }
 if (fail !== '0') { console.error(`失敗しているテストがある: fail=${fail}`); process.exit(1); }
