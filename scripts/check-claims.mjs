@@ -40,5 +40,26 @@ for (const f of ['README.md', 'REPORT.md', 'REPORT-paid.md', 'REPORT-fix.md', 'E
     }
   }
 }
+// 根拠の鮮度。外部の仕様は変わる。「一度確認した」は「今も正しい」を意味しない。
+if (existsSync('claims.json')) {
+  const claims = JSON.parse(readFileSync('claims.json', 'utf8'));
+  const stale = 90 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  for (const c of claims) {
+    if (!c.source || !c.checked_at) {
+      console.error(`claims.json: source と checked_at が無い主張がある: ${String(c.claim).slice(0, 50)}`);
+      bad++;
+      continue;
+    }
+    const age = now - Date.parse(c.checked_at);
+    if (!Number.isFinite(age)) { console.error(`claims.json: checked_at が日付として読めない: ${c.checked_at}`); bad++; }
+    else if (age > stale) {
+      const days = Math.floor(age / 86400000);
+      console.error(`claims.json: ${days}日 再確認していない: ${String(c.claim).slice(0, 50)}`);
+      bad++;
+    }
+  }
+}
+
 if (bad) { console.error(`\n→ 文書を直すか、テストを直すか、どちらかに揃えること`); process.exit(1); }
 console.log(`OK: tests=${tests} pass=${pass} fail=${fail}。文書の総数の記載とも一致`);

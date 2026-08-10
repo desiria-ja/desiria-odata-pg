@@ -1,0 +1,45 @@
+[
+  {
+    "claim": "ODK Central の OData では __system/submissionDate が作成時刻、__system/updatedAt が更新時刻に対応する",
+    "source": "https://docs.getodk.org/central-api-odata-endpoints/",
+    "source_type": "official_documentation",
+    "checked_at": "2026-08-09",
+    "confidence": "high",
+    "used_in": [
+      "README.md",
+      "src/paid.js"
+    ]
+  },
+  {
+    "claim": "submission は初回作成時に updatedAt が null で、編集時に値が入る",
+    "source": "https://docs.getodk.org/central-api-submission-management/",
+    "source_type": "official_documentation",
+    "checked_at": "2026-08-09",
+    "confidence": "high",
+    "used_in": [
+      "README.md",
+      "src/paid.js"
+    ]
+  },
+  {
+    "claim": "OIDC SSO が有効な Central では Basic 認証と POST /v1/sessions が使えない",
+    "source": "https://docs.getodk.org/central-api-authentication/",
+    "source_type": "official_documentation",
+    "checked_at": "2026-08-09",
+    "confidence": "high",
+    "used_in": [
+      "README.md"
+    ]
+  },
+  {
+    "claim": "製品名に ODK の標章を含める場合は ODK の許諾が必要で、非提携表示が求められる",
+    "source": "https://getodk.org/legal/brand/",
+    "source_type": "official_documentation",
+    "checked_at": "2026-08-09",
+    "confidence": "high",
+    "used_in": [
+      "README.md",
+      "package.json"
+    ]
+  }
+]
