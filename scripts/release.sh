@@ -13,11 +13,8 @@ case "$STAGE" in
     step "② 文書の数字と実測の照合"; node scripts/check-claims.mjs
     ;;
   gate)
-    step "③ 敵対的レビュー（絶対ルール25。飛ばせない）"
-    [ -f REDTEAM.md ] || { echo "REDTEAM.md（レビュー用プロンプト）が無い。作れ"; exit 1; }
-    codex exec --cd "$ROOT" --skip-git-repo-check -s read-only \
-      -c tools.web_search=true -o "REVIEW-$(date +%Y%m%d-%H%M).md" - < REDTEAM.md
-    echo "→ 生成された REVIEW-*.md を読み、ブロッカーが無いことを確認してから staging へ"
+    step "③ 敵対的レビュー（絶対ルール25。飛ばせない・黙って通らない）"
+    bash "$ROOT/scripts/gate.sh"
     ;;
   staging)
     bash "$0" test
@@ -27,6 +24,11 @@ case "$STAGE" in
     ;;
   prod)
     bash "$0" test
+    if ! ls REVIEW-*.md >/dev/null 2>&1; then
+      echo "✗ REVIEW-*.md が無い。公開ゲート（release.sh gate）を通していない。"
+      echo "  2026-08-09、ゲートを飛ばして5件を公開し、実装バグ1件と商標違反3件を出した。"
+      exit 1
+    fi
     step "⑤ 本番へデプロイ"
     vercel deploy --prod 2>&1 | grep -iE "Production|Aliased|error"
     step "⑥ 公開URLでの実測（「デプロイした」で終わらせない）"

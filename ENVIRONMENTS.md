@@ -1,29 +1,37 @@
-# 環境（費用0円で成立させる）
+# Environments
 
-| 環境 | 実体 | 用途 | 費用 |
-|---|---|---|---|
-| **開発 (dev)** | ローカル。DBは `embedded-postgres`（**本物のPostgreSQLバイナリ。Dockerも管理者権限も不要**） | 実装と単体・結合テスト | 0円 |
-| **試験 (staging)** | **Vercel のプレビューデプロイ**（コミットごとに固有URL） | 本番相当の配信で実測 | 0円 |
-| **本番 (prod)** | Vercel の production alias（`byrdhq.com`） | 公開 | 0円 |
-| **CI** | GitHub Actions（**公開リポジトリは無料**） | pushごとにテストと文書照合 | 0円 |
+This is a plain Node.js CLI. It reads an ODK Central-shaped submission export and writes rows into a PostgreSQL database you point it at. There is no server, no database, no hosted component, and
+nothing is deployed anywhere.
 
-⚠️ **既知の制約**: Vercelのプレビューは Deployment Protection により匿名アクセスが302になる（2026-08-09に実測）。
-**試験環境で匿名の実測が必要な場合は、本番の別サブドメインを使うか、保護の解除をオーナー決裁で行う。**
+| Environment | What it is | Cost |
+|---|---|---|
+| **Local** | Your machine. Node 22+. `npm test` covers the transform and the incremental sync against a real PostgreSQL started by `embedded-postgres` (a real server binary; no Docker, no admin rights). | none |
+| **CI** | GitHub Actions on every push: the test suite, plus a check that the numbers quoted in the docs match what the tools actually print. | free on public repos |
 
-## 手順（飛ばせない順番）
+There is no staging or production environment, because nothing here is served to anyone.
+
+## Running it
 
 ```bash
-bash scripts/release.sh test      # ① テスト ② 文書の数字と実測の照合
-bash scripts/release.sh gate      # ③ 敵対的レビュー（絶対ルール25）
-bash scripts/release.sh staging   # ④ 試験環境へ
-bash scripts/release.sh prod      # ⑤ 本番へ ⑥ 公開URLで実測
+npm install
+npm test                          # the suite
+node scripts/check-claims.mjs     # documented numbers vs. actual tool output
 ```
 
-**`gate` を飛ばした本番デプロイは規約違反。** 2026-08-09に実際に飛ばし、実装バグ1件と商標違反3件を公開した。
+## Before publishing a change
 
-## テストの原則
+```bash
+bash scripts/release.sh test      # tests + claim check
+bash scripts/release.sh gate      # adversarial review; fails loudly if it doesn't run
+```
 
-- **「動いたはず」で完了にしない。** 公開後は必ず公開URLに対して実測する
-- **文書に数字を書いたら、その場でコマンドを実行して照合する**（`scripts/check-claims.mjs` がCIで強制する）
-- **外部サービスに繋がるコードは、fixtureとスタブで検証する**（CIで動くこと）
-- **認証情報が漏れないことを検証するテストを必ず1件入れる**
+`gate` exists because a review that silently doesn't happen is worse than no review: it
+leaves you believing something was checked. It fails if the reviewer process errors, if it
+produces no output, if the output is too short to be a real review, or if the expected
+sections are missing.
+
+## What this project deliberately has no story for
+
+- **Hosting.** Nobody runs this for you. It connects to your database, from your machine.
+- **Your data.** Nothing is sent anywhere except the PostgreSQL connection string you supply.
+- **Secrets.** The one credential is your database URL. It is read from the environment and never written to disk or logged.
