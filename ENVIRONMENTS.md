@@ -1,37 +1,55 @@
 # Environments
 
-This is a plain Node.js CLI. It reads an ODK Central-shaped submission export and writes rows into a PostgreSQL database you point it at. There is no server, no database, no hosted component, and
-nothing is deployed anywhere.
+This is a plain Node.js command-line tool with **no dependencies**. It reads an ODK
+Central-shaped submission export and writes SQL to standard output. It does not connect to
+PostgreSQL — you pipe the SQL into `psql` yourself, or read it first and decide not to.
+There is no server, no hosted component, and nothing is deployed anywhere.
+
+That separation is deliberate: the tool never holds your database credentials, and you can
+see exactly what would be executed before anything runs.
 
 | Environment | What it is | Cost |
 |---|---|---|
-| **Local** | Your machine. Node 22+. `npm test` covers the transform and the incremental sync against a real PostgreSQL started by `embedded-postgres` (a real server binary; no Docker, no admin rights). | none |
-| **CI** | GitHub Actions on every push: the test suite, plus a check that the numbers quoted in the docs match what the tools actually print. | free on public repos |
+| **Local** | Your machine. Node 20 or newer (CI runs 22). `npm test` runs `node --test` against fixtures — it checks the generated SQL (identifiers, quoting, types, the incremental-sync predicate), not a live database. | none |
+| **CI** | GitHub Actions on pushes and pull requests to `main`: the same suite, plus a check that the numbers quoted in the docs match what the tools actually print. | free on public repos |
 
 There is no staging or production environment, because nothing here is served to anyone.
 
 ## Running it
 
 ```bash
-npm install
 npm test                          # the suite
-node scripts/check-claims.mjs     # documented numbers vs. actual tool output
+npm run check                     # documented numbers vs. actual tool output
+npm run demo                      # generate SQL from the bundled fixture
 ```
 
-## Before publishing a change
+## What the tests do not cover
 
-```bash
-bash scripts/release.sh test      # tests + claim check
-bash scripts/release.sh gate      # adversarial review; fails loudly if it doesn't run
-```
+They do not execute the generated SQL against a real PostgreSQL server. If your column
+names, types, or extensions differ from the fixtures, the SQL may still be rejected by your
+database. **Read the output before you run it.**
 
-`gate` exists because a review that silently doesn't happen is worse than no review: it
-leaves you believing something was checked. It fails if the reviewer process errors, if it
-produces no output, if the output is too short to be a real review, or if the expected
-sections are missing.
+## Credentials
+
+The free path needs none: it reads a file you already have.
+
+The paid path is a library function that talks to an ODK Central instance. You pass it the
+credentials that instance requires — an account email and password, which it exchanges for
+a session token. **It does not read environment variables or configuration files**: the
+caller decides where the credentials come from. Passwords and tokens are redacted from its
+debug output rather than logged.
+
+## Before we publish a change
+
+We run an adversarial review of the repository before pushing anything public. It runs on
+our own machines and is not part of this package, so nothing here depends on it.
 
 ## What this project deliberately has no story for
 
-- **Hosting.** Nobody runs this for you. It connects to your database, from your machine.
-- **Your data.** Nothing is sent anywhere except the PostgreSQL connection string you supply.
-- **Secrets.** The one credential is your database URL. It is read from the environment and never written to disk or logged.
+- **Hosting.** Nobody runs this for you.
+- **Your data.** It reads a local file and writes text to standard output. Nothing leaves
+  your machine on the free path.
+- **Migrations.** It emits `CREATE TABLE IF NOT EXISTS` for the table you name plus a small
+  state table it uses to track incremental syncs (`odk_sync_state`; the paid path adds
+  `odk_attachment_refs` and `odk_paid_sync_state`). It does not manage schema history, and
+  it will not alter a table that already exists with different columns.

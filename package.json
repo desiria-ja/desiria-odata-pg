@@ -10,8 +10,7 @@
     "demo": "node src/cli.js test/fixtures/submissions.json --schema submissions_stage --table bird_survey",
     "test": "node --test",
     "check": "node scripts/check-claims.mjs",
-    "release:test": "bash scripts/release.sh test",
-    "release:gate": "bash scripts/release.sh gate"
+    "release:test": "bash scripts/release.sh test"
   },
   "engines": {
     "node": ">=20"

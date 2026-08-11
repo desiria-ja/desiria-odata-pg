@@ -4,3 +4,8 @@ tmp/
 .DS_Store
 REVIEW-*.md
 .vercel
+
+# 内部のレビュー機構。クローンから実行できないため公開しない
+REDTEAM.md
+scripts/gate.sh
+REPORT*.md
